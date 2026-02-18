@@ -1,4 +1,4 @@
-import { Component, inject, ViewChild, ElementRef, effect, ViewEncapsulation } from '@angular/core';
+import { Component, inject, ViewChild, ElementRef, effect, ViewEncapsulation, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { GitEngineService, Commit } from '../../../core/services/git-engine.service';
 import { createGitgraph, templateExtend, TemplateName, Mode, Orientation } from '@gitgraph/js';
@@ -12,7 +12,7 @@ import { createGitgraph, templateExtend, TemplateName, Mode, Orientation } from 
     <div class="h-full w-full bg-[#0f172a] border border-[#1e293b] rounded-lg overflow-hidden flex flex-col shadow-sm">
       
       <!-- Simple Header -->
-      <div class="bg-[#1e293b]/50 px-4 py-2 border-b border-[#334155]/30 flex justify-between items-center h-[50px]">
+      <div class=" bg-[#1e293b]/50 px-4 py-2 border-b border-[#334155]/30 flex justify-between items-center h-[50px]">
         <div class="flex items-center gap-2">
           <div class="w-2 h-2 rounded-full bg-[#6366f1]"></div>
           <span class="text-sm font-semibold text-[#f1f5f9]">Git History</span>
@@ -61,9 +61,43 @@ import { createGitgraph, templateExtend, TemplateName, Mode, Orientation } from 
         
         <div class="flex items-center gap-2">
           <span class="text-xs text-[#94a3b8]">Branch:</span>
-          <span class="px-2 py-1 rounded bg-[#1e293b] text-[#22d3ee] text-xs font-mono border border-[#6366f1]/50">
-            {{ currentBranch() || 'detached' }}
-          </span>
+          
+          <div class="relative">
+            <button 
+                (click)="toggleBranchDropdown()"
+                class="flex items-center gap-2 px-2 py-1 rounded bg-[#1e293b] text-[#22d3ee] text-xs font-mono border border-[#6366f1]/50 hover:bg-[#334155] hover:border-[#6366f1] transition-all cursor-pointer outline-none focus:ring-1 focus:ring-[#6366f1]">
+                {{ currentBranch() || 'detached' }}
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" 
+                     class="opacity-70 transition-transform duration-200"
+                     [class.rotate-180]="isBranchDropdownOpen()">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+            </button>
+
+            <!-- Overlay for click outside -->
+            <div *ngIf="isBranchDropdownOpen()" 
+                 class="fixed inset-0 z-40 bg-transparent cursor-default"
+                 (click)="toggleBranchDropdown()">
+            </div>
+
+            <!-- Dropdown Menu -->
+            <div *ngIf="isBranchDropdownOpen()" 
+                 class="absolute right-0 top-[calc(100%+4px)] w-48 bg-[#0f172a] border border-[#334155] rounded-lg shadow-xl shadow-black/50 z-50 overflow-hidden backdrop-blur-sm">
+                
+                <div class="py-1 max-h-64 overflow-y-auto">
+                    <button *ngFor="let branch of branchNames()"
+                            (click)="checkoutBranch(branch)"
+                            class="w-full text-left px-3 py-2 text-xs hover:bg-[#1e293b] flex items-center justify-between group transition-colors border-l-2 border-transparent hover:border-[#6366f1]">
+                        <span class="font-mono text-[#cbd5e1] group-hover:text-white">{{ branch }}</span>
+                        <span *ngIf="branch === currentBranch()" class="w-1.5 h-1.5 rounded-full bg-[#4ade80] shadow-[0_0_4px_rgba(74,222,128,0.5)]"></span>
+                    </button>
+                    
+                    <div *ngIf="branchNames().length === 0" class="px-3 py-2 text-xs text-[#64748b] italic text-center">
+                        No branches found
+                    </div>
+                </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -136,6 +170,27 @@ export class VisualizerComponent {
     gitService = inject(GitEngineService);
     currentBranch = this.gitService.currentBranch;
     networkOp = this.gitService.networkOperation;
+
+    isBranchDropdownOpen = signal(false);
+    branchNames = computed(() => Object.keys(this.gitService.branches()));
+
+    toggleBranchDropdown() {
+        this.isBranchDropdownOpen.update(v => !v);
+    }
+
+    checkoutBranch(branchName: string) {
+        if (branchName === this.currentBranch()) {
+            this.isBranchDropdownOpen.set(false);
+            return;
+        }
+
+        this.gitService.checkout(branchName).then(() => {
+            this.isBranchDropdownOpen.set(false);
+        }).catch(err => {
+            console.error(err);
+            this.isBranchDropdownOpen.set(false);
+        });
+    }
 
     constructor() {
         effect(() => {

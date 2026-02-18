@@ -1,4 +1,4 @@
-import { Component, ViewChild, AfterViewInit, OnDestroy, inject, effect, ElementRef, ViewEncapsulation } from '@angular/core';
+import { Component, ViewChild, AfterViewInit, OnDestroy, inject, effect, ElementRef, ViewEncapsulation, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { NgTerminal, NgTerminalModule } from 'ng-terminal';
 import { FitAddon } from 'xterm-addon-fit';
@@ -95,6 +95,19 @@ export class TerminalComponent implements AfterViewInit, OnDestroy {
       this.lessonService.currentLesson(); // Dependency
       this.resetTerminal();
     }, { allowSignalWrites: true });
+
+    // Update prompt on branch or cwd change
+    effect(() => {
+      // Register dependencies
+      this.gitService.currentBranch();
+      this.gitService.cwd();
+
+      untracked(() => {
+        if (this.child && this.child.underlying) {
+          this.updatePromptLine();
+        }
+      });
+    });
   }
 
   ngAfterViewInit() {
@@ -319,12 +332,36 @@ export class TerminalComponent implements AfterViewInit, OnDestroy {
     this.writePrompt();
   }
 
+  private updatePromptLine() {
+    if (!this.child?.underlying) return;
+    const term = this.child.underlying;
+
+    // Clear line and return to start
+    term.write('\x1b[2K\r');
+
+    this.writePrompt();
+
+    // Restore User Input
+    if (this.currentCommand) {
+      term.write(this.currentCommand);
+
+      // Restore cursor
+      const diff = this.currentCommand.length - this.cursorPosition;
+      if (diff > 0) {
+        term.write(`\x1b[${diff}D`);
+      }
+    }
+  }
+
   private writePrompt() {
     const branch = this.gitService.currentBranch();
     const cwd = this.gitService.cwd();
     const path = `\x1b[1;36m${cwd}\x1b[0m`; // Cyan bold path
     const branchStr = branch ? ` \x1b[1;35m(${branch})\x1b[0m` : '';
 
+    // We don't clear line here by default since we might be appending, 
+    // but usually in this specific shell simulation we are always at clean line when calling this.
+    // However, updatePromptLine handles the clearing.
     this.child.write(`\r${path}${branchStr} $ `);
   }
 
