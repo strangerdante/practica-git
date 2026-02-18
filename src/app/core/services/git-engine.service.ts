@@ -1,0 +1,1060 @@
+import { Injectable, signal, computed } from '@angular/core';
+import git from 'isomorphic-git';
+import LightningFS from '@isomorphic-git/lightning-fs';
+import { Buffer } from 'buffer';
+
+(window as any).Buffer = Buffer;
+
+export interface Commit {
+    hash: string;
+    message: string;
+    author: string;
+    date: Date;
+    parent: string | null;
+    mergeParent?: string | null;
+    tree: Record<string, string>;
+}
+
+@Injectable({
+    providedIn: 'root'
+})
+export class GitEngineService {
+    commits = signal<Record<string, Commit>>({});
+    branches = signal<Record<string, string | null>>({});
+    head = signal<string>('');
+    currentBranch = signal<string | null>(null);
+    fileSystem = signal<Record<string, string>>({});
+    remotes = signal<Record<string, string>>({});
+    stashes = signal<{ id: number, message: string, files: Record<string, string> }[]>([]);
+    networkOperation = signal<'download' | 'upload' | null>(null);
+
+    // Virtual Filesystem State for Immersion
+    cwd = signal<string>('~/project');
+    repoPath = signal<string>('~/project'); // Where the "real" underlying repo is mounted virtually
+
+    fs: any;
+    readonly dir = '/repo';
+    private currentDbName = 'fs';
+    private readonly defaultAuthor = { name: 'User', email: 'user@example.com' };
+
+    currentCommitHash = computed(() => {
+        const head = this.head();
+        if (head.startsWith('refs/heads/')) {
+            const branchName = head.replace('refs/heads/', '');
+            return this.branches()[branchName] || null;
+        }
+        return head || null;
+    });
+
+    constructor() {
+        this.fs = new LightningFS('fs');
+        this.init().catch(err => console.error('Error inicializando git:', err));
+    }
+
+    async init() {
+        this.resetState();
+        await this.cleanupOldDatabase();
+        await this.initializeFreshDatabase();
+        await this.setupGitRepo();
+        await this.createExampleFiles();
+        await this.refreshState();
+
+        // Reset virtual environment defaults
+        this.cwd.set('~/project');
+        this.repoPath.set('~/project');
+
+        console.log('Git Engine Ready (Clean Slate)');
+    }
+
+    private resetState() {
+        this.commits.set({});
+        this.branches.set({});
+        this.head.set('');
+        this.currentBranch.set(null);
+        this.remotes.set({});
+        this.stashes.set([]);
+    }
+
+    private async createExampleFiles() {
+        try {
+            await this.fs.promises.writeFile(`${this.dir}/README.md`, '# Bienvenido a Git Interactive\n\nEste es un entorno seguro para practicar comandos de Git.\nLos cambios aquí no afectan tu sistema real.');
+            await this.fs.promises.writeFile(`${this.dir}/todo.txt`, '1. Aprender git init\n2. Aprender git add\n3. Aprender git commit\n4. Divertirse aprendiendo');
+            await this.fs.promises.writeFile(`${this.dir}/guia-rapida.md`, '## Comandos Básicos\n\n- `git status`: Ver estado\n- `git add <archivo>`: Preparar archivo\n- `git commit -m "mensaje"`: Guardar cambios');
+        } catch (error) {
+            console.error('Error creando archivos de ejemplo:', error);
+        }
+    }
+
+    private async cleanupOldDatabase() {
+        if (this.currentDbName?.startsWith('fs_')) {
+            try {
+                window.indexedDB.deleteDatabase(this.currentDbName);
+                console.log('Cleaned up old DB:', this.currentDbName);
+            } catch (e) {
+                console.warn('Could not delete old DB:', e);
+            }
+        }
+    }
+
+    private async initializeFreshDatabase() {
+        this.currentDbName = `fs_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+        console.log('Initializing FRESH Git Environment on DB:', this.currentDbName);
+        this.fs = new LightningFS(this.currentDbName);
+
+        try {
+            await this.fs.promises.mkdir(this.dir);
+        } catch (e) { /* ignore */ }
+    }
+
+    private async setupGitRepo() {
+        await git.init({ fs: this.fs, dir: this.dir, defaultBranch: 'main' });
+        await git.setConfig({ fs: this.fs, dir: this.dir, path: 'user.name', value: this.defaultAuthor.name });
+        await git.setConfig({ fs: this.fs, dir: this.dir, path: 'user.email', value: this.defaultAuthor.email });
+        // Ensure main branch is created initially
+        await git.branch({ fs: this.fs, dir: this.dir, ref: 'main', checkout: true });
+    }
+
+    async refreshState() {
+        try {
+            await this.updateHead();
+            await this.updateBranches();
+            await this.updateCommits();
+        } catch (error) {
+            console.error('Error refrescando estado:', error);
+        }
+    }
+
+    private async updateHead() {
+        let currentHead = '';
+        try {
+            currentHead = await git.resolveRef({ fs: this.fs, dir: this.dir, ref: 'HEAD', depth: 2 });
+        } catch (e) { /* ignore */ }
+
+        const branch = await git.currentBranch({ fs: this.fs, dir: this.dir }) || null;
+        this.currentBranch.set(branch);
+        this.head.set(branch ? `refs/heads/${branch}` : currentHead);
+    }
+
+    private async updateBranches() {
+        const branchesList = await git.listBranches({ fs: this.fs, dir: this.dir });
+        const branchesMap: Record<string, string | null> = {};
+
+        for (const b of branchesList) {
+            const hash = await git.resolveRef({ fs: this.fs, dir: this.dir, ref: b });
+            branchesMap[b] = hash;
+        }
+        this.branches.set(branchesMap);
+    }
+
+    private async updateCommits() {
+        const commitsMap: Record<string, Commit> = {};
+        const branchesList = await git.listBranches({ fs: this.fs, dir: this.dir });
+        const currentHead = this.head();
+        const refs = [...branchesList];
+
+        if (!refs.includes('HEAD') && currentHead) refs.push('HEAD');
+
+        for (const ref of refs) {
+            try {
+                const logs = await git.log({ fs: this.fs, dir: this.dir, ref });
+                for (const commitObj of logs) {
+                    if (!commitsMap[commitObj.oid]) {
+                        commitsMap[commitObj.oid] = {
+                            hash: commitObj.oid,
+                            message: commitObj.commit.message,
+                            author: `${commitObj.commit.author.name} <${commitObj.commit.author.email}>`,
+                            date: new Date(commitObj.commit.author.timestamp * 1000),
+                            parent: commitObj.commit.parent[0] || null,
+                            mergeParent: commitObj.commit.parent[1] || null,
+                            tree: {}
+                        };
+                    }
+                }
+            } catch (e) { /* ignore */ }
+        }
+        this.commits.set(commitsMap);
+    }
+
+    async resolveCommit(ref: string): Promise<string> {
+        const [base, countStr] = ref.split('~');
+        let oid = await this.resolveRef(base);
+
+        if (countStr !== undefined) {
+            const count = parseInt(countStr, 10) || 1;
+            for (let i = 0; i < count; i++) {
+                const commit = await git.readCommit({ fs: this.fs, dir: this.dir, oid });
+                if (commit.commit.parent?.length > 0) {
+                    oid = commit.commit.parent[0];
+                } else {
+                    throw new Error(`Commit ${oid} no tiene padre`);
+                }
+            }
+        }
+        return oid;
+    }
+
+    private async resolveRef(ref: string): Promise<string> {
+        try {
+            return await git.resolveRef({ fs: this.fs, dir: this.dir, ref });
+        } catch {
+            return await git.expandOid({ fs: this.fs, dir: this.dir, oid: ref });
+        }
+    }
+
+    async status() {
+        const matrix = await git.statusMatrix({ fs: this.fs, dir: this.dir });
+        const staged: string[] = [];
+        const modified: string[] = [];
+        const untracked: string[] = [];
+
+        matrix.forEach(([filepath, head, workdir, stage]) => {
+            if (stage !== head) {
+                staged.push(filepath);
+            }
+
+            if (workdir !== stage) {
+                if (workdir === 0 && stage !== 0) modified.push(filepath);
+                else if (workdir === 2 && stage === 0) untracked.push(filepath);
+                else if (workdir === 2) modified.push(filepath);
+            }
+        });
+
+        return { staged, modified, untracked };
+    }
+
+    async add(path: string) {
+        await git.add({ fs: this.fs, dir: this.dir, filepath: path });
+        await this.refreshState();
+        return `Se añadió ${path}`;
+    }
+
+    async commit(message: string) {
+        const sha = await git.commit({
+            fs: this.fs,
+            dir: this.dir,
+            message,
+            author: this.defaultAuthor
+        });
+        await this.refreshState();
+        return `[${this.currentBranch() || 'detached'} ${sha.substring(0, 7)}] ${message}`;
+    }
+
+    async checkout(ref: string) {
+        await git.checkout({ fs: this.fs, dir: this.dir, ref });
+        await this.refreshState();
+        return `Cambiado a '${ref}'`;
+    }
+
+
+
+    async deleteBranch(name: string) {
+        if (name === this.currentBranch()) {
+            throw new Error(`no se puede borrar la rama '${name}' checked out`);
+        }
+        await git.deleteBranch({ fs: this.fs, dir: this.dir, ref: name });
+        await this.refreshState();
+        return `Rama eliminada ${name}`;
+    }
+
+    async merge(branchName: string) {
+        try {
+            const result = await git.merge({
+                fs: this.fs,
+                dir: this.dir,
+                ours: this.currentBranch() || undefined,
+                theirs: branchName,
+                author: this.defaultAuthor
+            });
+            await this.refreshState();
+            if (result.oid) return `Merge realizado: ${result.oid.substring(0, 7)}`;
+            return `CONFLICTO (contenido): Conflicto de fusión en archivo(s). Revise con git status.`;
+        } catch (e: any) {
+            return `Merge fallido: ${e.message}`;
+        }
+    }
+
+    async rebase(targetBranch: string) {
+        const currentBranch = this.currentBranch();
+        if (!currentBranch) throw new Error('Debes estar en una rama para hacer rebase');
+
+        await git.checkout({ fs: this.fs, dir: this.dir, ref: targetBranch });
+        const newHead = await git.resolveRef({ fs: this.fs, dir: this.dir, ref: 'HEAD' });
+        await git.branch({ fs: this.fs, dir: this.dir, ref: currentBranch, force: true, object: newHead });
+        await git.checkout({ fs: this.fs, dir: this.dir, ref: currentBranch });
+        await this.refreshState();
+        return `Rebase (simulado fast-forward) de ${currentBranch} sobre ${targetBranch} completado.`;
+    }
+
+    async reset(args: string[]) {
+        const { mode, refStr, filepaths } = this.parseResetArgs(args);
+        const oid = await this.resolveCommit(refStr);
+
+        if (filepaths.length > 0) {
+            return await this.resetFiles(filepaths, oid);
+        }
+
+        return await this.resetBranch(oid, mode);
+    }
+
+    private parseResetArgs(args: string[]) {
+        let mode: 'soft' | 'mixed' | 'hard' = 'mixed';
+        let refStr = 'HEAD';
+        const filepaths: string[] = [];
+
+        for (const arg of args) {
+            if (arg === '--soft') mode = 'soft';
+            else if (arg === '--hard') mode = 'hard';
+            else if (arg === '--mixed') mode = 'mixed';
+            else {
+                if (refStr === 'HEAD' && filepaths.length === 0) {
+                    try {
+                        this.resolveCommit(arg);
+                        refStr = arg;
+                        continue;
+                    } catch { }
+                }
+                filepaths.push(arg);
+            }
+        }
+
+        return { mode, refStr, filepaths };
+    }
+
+    private async resetFiles(filepaths: string[], oid: string) {
+        for (const filepath of filepaths) {
+            await git.resetIndex({ fs: this.fs, dir: this.dir, filepath, ref: oid });
+        }
+        await this.refreshState();
+        return `Reset realizado en ${filepaths.join(', ')}`;
+    }
+
+    private async resetBranch(oid: string, mode: 'soft' | 'mixed' | 'hard') {
+        const currentBranch = this.currentBranch();
+        if (currentBranch) {
+            await git.branch({ fs: this.fs, dir: this.dir, ref: currentBranch, object: oid, force: true });
+        }
+
+        if (mode === 'mixed') {
+            const files = await git.listFiles({ fs: this.fs, dir: this.dir, ref: oid });
+            for (const file of files) {
+                await git.resetIndex({ fs: this.fs, dir: this.dir, filepath: file, ref: oid });
+            }
+        } else if (mode === 'hard') {
+            await git.checkout({ fs: this.fs, dir: this.dir, ref: oid, force: true });
+        }
+
+        await this.refreshState();
+        return `Reset --${mode} a ${oid.substring(0, 7)}`;
+    }
+
+    async revert(ref: string) {
+        const oid = await this.resolveCommit(ref);
+        const commit = await git.readCommit({ fs: this.fs, dir: this.dir, oid });
+
+        if (!commit.commit.parent?.length) {
+            return 'No se puede revertir commit inicial';
+        }
+
+        const parent = commit.commit.parent[0];
+        const filesInParent = await git.listFiles({ fs: this.fs, dir: this.dir, ref: parent });
+        await git.checkout({ fs: this.fs, dir: this.dir, ref: parent, filepaths: filesInParent, force: true });
+
+        const filesInOid = await git.listFiles({ fs: this.fs, dir: this.dir, ref: oid });
+        const parentSet = new Set(filesInParent);
+
+        for (const f of filesInOid) {
+            if (!parentSet.has(f)) {
+                try {
+                    await this.fs.promises.unlink(`${this.dir}/${f}`);
+                    await git.remove({ fs: this.fs, dir: this.dir, filepath: f });
+                } catch { }
+            }
+        }
+
+        await this.add('.');
+        await this.commit(`Revert "${commit.commit.message}"`);
+        return 'Revert completado.';
+    }
+
+    async restore(args: string[]) {
+        const { staged, filepaths } = this.parseRestoreArgs(args);
+        if (filepaths.length === 0) return 'Restore necesita archivos';
+
+        try {
+            for (const filepath of filepaths) {
+                if (staged) {
+                    await git.resetIndex({ fs: this.fs, dir: this.dir, filepath, ref: 'HEAD' });
+                } else {
+                    // Force checkout to overwrite modifications in working directory
+                    await git.checkout({ fs: this.fs, dir: this.dir, filepaths: [filepath], force: true });
+                }
+            }
+            await this.refreshState();
+            return 'Archivos restaurados (Working Tree actualizado)';
+        } catch (e: any) {
+            return `fatal: ${e.message}`;
+        }
+    }
+
+    private parseRestoreArgs(args: string[]) {
+        let staged = false;
+        const filepaths: string[] = [];
+
+        for (const arg of args) {
+            if (arg === '--staged') staged = true;
+            else filepaths.push(arg);
+        }
+
+        return { staged, filepaths };
+    }
+
+    async cherryPick(ref: string) {
+        if (!ref) return 'cherry-pick: falta el commit/rama';
+
+        try {
+            const oid = await this.resolveCommit(ref);
+            const commit = await git.readCommit({ fs: this.fs, dir: this.dir, oid });
+
+            // Simulación simplificada: "Aplicar" el estado del commit.
+            // En un cherry-pick real, se aplicaría solo el diff.
+            // Para fines educativos en esta app, usamos el tree del commit target
+            // pero mantenemos el padre actual como padre principal.
+            const sha = await git.commit({
+                fs: this.fs,
+                dir: this.dir,
+                message: commit.commit.message,
+                author: commit.commit.author,
+                parent: [await git.resolveRef({ fs: this.fs, dir: this.dir, ref: 'HEAD' })],
+                tree: commit.commit.tree
+            });
+            await this.refreshState();
+            return `Cherry-pick ${oid.substring(0, 7)} aplicado como ${sha.substring(0, 7)}.`;
+        } catch (e: any) {
+            return `fatal: ${e.message}`;
+        }
+    }
+
+    async runCommand(commandStr: string): Promise<string> {
+        // Support && chaining
+        if (commandStr.includes('&&')) {
+            const commands = commandStr.split('&&');
+            let output = '';
+            for (const cmd of commands) {
+                const result = await this.runCommand(cmd.trim());
+                if (result) output += (output ? '\n' : '') + result;
+                // Stop on error (simple heuristic)
+                if (result.toLowerCase().startsWith('fatal:') || result.toLowerCase().startsWith('error:')) {
+                    return output;
+                }
+            }
+            return output;
+        }
+
+        const parts = commandStr.trim().split(/\s+/);
+        const cmd = parts[0];
+
+        try {
+            if (cmd === 'cd') return this.handleCd(parts[1]);
+            if (cmd === 'configure-env') return this.handleConfigureEnv(parts.slice(1));
+
+            if (cmd === 'touch') return await this.handleTouch(parts[1]);
+            if (cmd === 'mkdir') return await this.handleMkdir(parts[1]);
+            if (cmd === 'echo') return await this.handleEcho(parts);
+            if (cmd === 'cat') return await this.handleCat(parts[1]);
+            if (cmd === 'ls') return await this.handleLs();
+            if (cmd === 'git') return await this.handleGitCommand(parts.slice(1));
+
+            if (cmd === 'open') return await this.handleOpen(parts[1]);
+            if (['nano', 'vi', 'vim', 'notepad', 'code', 'pico', 'emacs'].includes(cmd)) {
+                return await this.handleEditor(cmd, parts[1]);
+            }
+
+            return `${cmd}: comando no encontrado`;
+        } catch (e: any) {
+            return `Error: ${e.message}`;
+        }
+    }
+
+    private handleCd(path: string): string {
+        if (!path || path === '~') {
+            this.cwd.set('~');
+            return '';
+        }
+
+        const current = this.cwd();
+        let newPath = current;
+
+        if (path === '..') {
+            if (current === '~') return '';
+            const segments = current.split('/');
+            segments.pop();
+            newPath = segments.join('/') || '~'; // Fallback shouldn't happen if rooted at ~
+        } else {
+            // Simple subdirectory simulation
+            // If we are at '~' and cd 'sales-app', we go to '~/sales-app'
+            // We don't strictly validate directory existence for ALL paths, but we could.
+            // For immersion, assuming success unless it's obviously wrong.
+            const target = current === '~' ? `~/${path}` : `${current}/${path}`;
+            newPath = target;
+        }
+
+        this.cwd.set(newPath);
+        return '';
+    }
+
+    private handleConfigureEnv(args: string[]): string {
+        // syntax: configure-env cwd=~ repo=~/sales-app
+        for (const arg of args) {
+            const [key, val] = arg.split('=');
+            if (key === 'cwd') this.cwd.set(val);
+            if (key === 'repo') this.repoPath.set(val);
+        }
+        return '';
+    }
+
+    private async handleOpen(filename: string) {
+        if (!filename) return 'open: falta archivo';
+        // En esta terminal simulada, "abrir" un archivo de texto es equivalente a verlo con cat
+        return await this.handleCat(filename);
+    }
+
+    private async handleEditor(editor: string, filename: string) {
+        const target = filename ? filename : 'archivo';
+        return `Editor '${editor}' simulado.\nPara editar archivos usa:\n  echo "contenido" > ${target} (sobrescribir)\n  echo "más contenido" >> ${target} (agregar al final)\n  cat ${target} (ver contenido)`;
+    }
+
+    private async handleTouch(filename: string) {
+        if (!filename) return 'touch: falta archivo';
+        await this.fs.promises.writeFile(`${this.dir}/${filename}`, '');
+        await this.refreshState();
+        return '';
+    }
+
+    private async handleMkdir(dirname: string) {
+        if (!dirname) return 'mkdir: falta directorio';
+        await this.fs.promises.mkdir(`${this.dir}/${dirname}`);
+        return '';
+    }
+
+    private async handleEcho(parts: string[]) {
+        let append = false;
+        let arrowIndex = parts.indexOf('>>');
+        if (arrowIndex !== -1) {
+            append = true;
+        } else {
+            arrowIndex = parts.indexOf('>');
+        }
+        if (arrowIndex === -1) return parts.slice(1).join(' '); // Echo to stdout
+
+        const content = parts.slice(1, arrowIndex).join(' ').replace(/^"(.*)"$/, '$1');
+        const filename = parts[arrowIndex + 1];
+        if (!filename) return 'error sintaxis';
+
+        try {
+            if (append) {
+                let currentContent = '';
+                try {
+                    currentContent = await this.fs.promises.readFile(`${this.dir}/${filename}`, 'utf8');
+                    // Add newline if file not empty and doesn't end with one? Simpler to just append with newline prefix usually
+                    if (currentContent && !currentContent.endsWith('\n')) currentContent += '\n';
+                } catch (e) {
+                    // File doesn't exist, create it
+                }
+                await this.fs.promises.writeFile(`${this.dir}/${filename}`, currentContent + content + '\n');
+            } else {
+                await this.fs.promises.writeFile(`${this.dir}/${filename}`, content + '\n'); // Add newline for typical editor behavior
+            }
+            await this.refreshState();
+            return '';
+        } catch (e) {
+            return `echo: error escribiendo archivo: ${e}`;
+        }
+    }
+
+    private async handleCat(filename: string) {
+        if (!filename) return 'cat: falta archivo';
+        try {
+            const content = await this.fs.promises.readFile(`${this.dir}/${filename}`, 'utf8');
+            return content as string;
+        } catch (e) {
+            return `cat: ${filename}: No existe el archivo o directorio`;
+        }
+    }
+
+    private async handleLs() {
+        try {
+            // Since we are simulating different directories but backing them with ONE repo at /repo
+            // We need to decide what to show.
+            // If cwd == repoPath, show repo contents.
+            const current = this.cwd();
+            const repo = this.repoPath();
+
+            if (current === repo) {
+                const files = await this.fs.promises.readdir(this.dir);
+                return files.filter((f: string) => f !== '.git').join('  ');
+            } else {
+                // If we are at ~ (parent), show the repo directory name if it exists?
+                // This implies we need a registry of "other" folders.
+                // For simplicity, if at ~, and repoPath is ~/sales-app, show 'sales-app'.
+                if (current === '~') {
+                    if (repo.startsWith('~/')) {
+                        return repo.replace('~/', '');
+                    }
+                }
+                return '';
+            }
+        } catch (e) {
+            return `ls: error al listar directorio`;
+        }
+    }
+
+    private async handleGitCommand(parts: string[]): Promise<string> {
+        const subCmd = parts[0];
+        const args = parts.slice(1);
+
+        // Check if we are inside a git repo (virtual check)
+        const current = this.cwd();
+        const repo = this.repoPath();
+
+        // Allowed commands outside a repo
+        const allowedOutside = ['clone', 'init', 'help', '--help', 'version'];
+
+        if (!allowedOutside.includes(subCmd)) {
+            // Very simple check: cwd must START WITH repoPath (so subdirs work too)
+            // But for simplicity, let's say cwd must BE repoPath or inside it.
+            if (!current.startsWith(repo)) {
+                return `fatal: not a git repository (or any of the parent directories): .git`;
+            }
+        }
+
+        const commands: Record<string, () => Promise<string>> = {
+            'init': async () => { await this.init(); return 'Repositorio reinicializado.'; },
+            'status': () => this.handleStatus(),
+            'add': () => this.add(args[0]),
+            'commit': () => this.handleCommit(args),
+            'log': () => this.handleLog(args),
+            'branch': () => this.handleBranch(args),
+            'reset': () => this.reset(args),
+            'revert': () => this.revert(args[0]),
+            'restore': () => this.restore(args),
+            'checkout': () => this.handleCheckout(args),
+            'switch': () => this.handleSwitch(args),
+            'merge': () => this.merge(args[0]),
+            'rebase': () => this.rebase(args[0]),
+            'cherry-pick': () => this.cherryPick(args[0]),
+            'diff': () => this.handleDiff(),
+            'remote': () => this.handleRemote(args),
+            'fetch': () => this.handleFetch(args),
+            'pull': () => this.handlePull(args),
+            'push': () => this.handlePush(args),
+            'clone': () => this.handleClone(args),
+            'stash': () => this.handleStash(args),
+            'clean': () => this.handleClean(args),
+            'rm': () => this.handleRm(args),
+            'mv': () => this.handleMv(args)
+        };
+
+        return commands[subCmd] ? await commands[subCmd]() : `git ${subCmd}: comando no encontrado`;
+    }
+
+    private async handleStatus() {
+        const s = await this.status();
+        if (!s.staged.length && !s.modified.length && !s.untracked.length) return 'Árbol de trabajo limpio';
+        return `Staged: ${s.staged.join(', ')}\nModified: ${s.modified.join(', ')}\nUntracked: ${s.untracked.join(', ')}`;
+    }
+
+    private async handleCommit(args: string[]) {
+        let message = 'Commit sin mensaje';
+        let autoAdd = false;
+
+        // Detect -a, -am, -ma or just combined flags
+        // Simplification: check if any arg starting with - contains 'a'
+        for (const arg of args) {
+            if (arg.startsWith('-') && arg.includes('a')) {
+                autoAdd = true;
+            }
+        }
+
+        // Logic to extract message from -m flag
+        const mIdx = args.findIndex(a => a.startsWith('-') && a.includes('m'));
+        if (mIdx !== -1 && args.length > mIdx + 1) {
+            message = args.slice(mIdx + 1).join(' ').replace(/^"(.*)"$/, '$1');
+        }
+
+        if (args.includes('--amend')) return 'Amend no implementado.';
+
+        if (autoAdd) {
+            // Stage modified files (mimicking git commit -a)
+            const s = await this.status();
+            for (const file of s.modified) {
+                await git.add({ fs: this.fs, dir: this.dir, filepath: file });
+            }
+        }
+
+        return await this.commit(message);
+    }
+
+    private async handleLog(args: string[]) {
+        try {
+            const oneline = args.includes('--oneline');
+            const all = args.includes('--all');
+            const graph = args.includes('--graph');
+
+            let commits: any[] = [];
+
+            if (all) {
+                const branches = await git.listBranches({ fs: this.fs, dir: this.dir });
+                const commitMap = new Map<string, any>();
+
+                // Fetch log for every branch
+                for (const branch of branches) {
+                    try {
+                        const branchCommits = await git.log({ fs: this.fs, dir: this.dir, ref: branch });
+                        for (const c of branchCommits) {
+                            commitMap.set(c.oid, c);
+                        }
+                    } catch (e) { /* ignore ref errors */ }
+                }
+
+                // Also try HEAD explicitly if detached
+                try {
+                    const headCommits = await git.log({ fs: this.fs, dir: this.dir, ref: 'HEAD' });
+                    for (const c of headCommits) {
+                        commitMap.set(c.oid, c);
+                    }
+                } catch (e) { /* ignore */ }
+
+                commits = Array.from(commitMap.values());
+            } else {
+                commits = await git.log({ fs: this.fs, dir: this.dir });
+            }
+
+            // Sort by timestamp descending
+            commits.sort((a, b) => b.commit.author.timestamp - a.commit.author.timestamp);
+
+            return commits.map(l => {
+                const shortHash = l.oid.substring(0, 7);
+                const msg = l.commit.message.split('\n')[0]; // First line only for oneline
+
+                if (oneline) {
+                    // Start with simple * for graph, effectively a flat list but acknowledges the flag
+                    const prefix = graph ? '* ' : '';
+
+                    // Simple colorization for terminal
+                    const hashColor = '\x1b[33m'; // Yellow
+                    const reset = '\x1b[0m';
+
+                    return `${prefix}${hashColor}${shortHash}${reset} ${msg}`;
+                } else {
+                    return `commit ${l.oid}\nAuthor: ${l.commit.author.name} <${l.commit.author.email}>\nDate:   ${new Date(l.commit.author.timestamp * 1000).toDateString()}\n\n    ${l.commit.message}`;
+                }
+            }).join(oneline ? '\n' : '\n\n');
+
+        } catch (e: any) {
+            return `fatal: ${e.message}`;
+        }
+    }
+
+    async branch(name: string, force: boolean = false, oid?: string) {
+        await git.branch({
+            fs: this.fs,
+            dir: this.dir,
+            ref: name,
+            force,
+            object: oid
+        });
+        await this.refreshState();
+        return '';
+    }
+
+    private async handleBranch(args: string[]) {
+        if (args.length === 0) {
+            const branches = await git.listBranches({ fs: this.fs, dir: this.dir });
+            const current = await git.currentBranch({ fs: this.fs, dir: this.dir });
+            return branches.map(b => (b === current ? '* ' : '  ') + b).join('\n');
+        }
+
+        if (args[0] === '-d' || args[0] === '-D') return await this.deleteBranch(args[1]);
+
+        // Parse -f and startPoint
+        let force = false;
+        let name = '';
+        let startPoint = '';
+
+        const cleanArgs = args.filter(a => {
+            if (a === '-f' || a === '--force') {
+                force = true;
+                return false;
+            }
+            return true;
+        });
+
+        if (cleanArgs.length > 0) name = cleanArgs[0];
+        if (cleanArgs.length > 1) startPoint = cleanArgs[1];
+
+        if (!name) return 'fatal: branch name required';
+
+        let oid: string | undefined = undefined;
+        if (startPoint) {
+            try {
+                oid = await this.resolveCommit(startPoint);
+            } catch {
+                return `fatal: not a valid object name: '${startPoint}'`;
+            }
+        }
+
+        return await this.branch(name, force, oid);
+    }
+
+    private async handleCheckoutFiles(args: string[]) {
+        const dashIdx = args.indexOf('--');
+        if (dashIdx === 0) {
+            const files = args.slice(1);
+            await git.checkout({ fs: this.fs, dir: this.dir, filepaths: files });
+            await this.refreshState();
+            return `Checkout de archivos: ${files.join(', ')}`;
+        }
+        const ref = args[0];
+        const files = args.slice(dashIdx + 1);
+        await git.checkout({ fs: this.fs, dir: this.dir, ref, filepaths: files });
+        await this.refreshState();
+        return `Checkout de archivos desde ${ref}`;
+    }
+
+    private async handleCheckout(args: string[]) {
+        if (args.includes('--')) return await this.handleCheckoutFiles(args);
+        if (args.length > 1 && !args[0].startsWith('-')) {
+            try {
+                await this.resolveCommit(args[0]);
+                const files = args.slice(1);
+                await git.checkout({ fs: this.fs, dir: this.dir, ref: args[0], filepaths: files });
+                await this.refreshState();
+                return `Restaurado ${files.join(', ')} desde ${args[0]}`;
+            } catch { }
+        }
+        if (args[0] === '-b') {
+            await this.branch(args[1]);
+            return await this.checkout(args[1]);
+        }
+        return await this.checkout(args[0]);
+    }
+
+    private async handleSwitch(args: string[]) {
+        if (args[0] === '-c') {
+            await this.branch(args[1]);
+            return await this.checkout(args[1]);
+        }
+        return await this.checkout(args[0]);
+    }
+
+    private async handleDiff() {
+        const matrix = await git.statusMatrix({ fs: this.fs, dir: this.dir });
+        let diffOutput = '';
+        for (const [filepath, head, workdir] of matrix) {
+            if (head === 1 && workdir === 2) {
+                try {
+                    const headRef = await git.resolveRef({ fs: this.fs, dir: this.dir, ref: 'HEAD' });
+                    const headObj = await git.readBlob({ fs: this.fs, dir: this.dir, oid: headRef, filepath });
+                    const headContent = new TextDecoder().decode(headObj.blob);
+                    const workContent = await this.fs.promises.readFile(`${this.dir}/${filepath}`, 'utf8');
+                    diffOutput += `diff --git a/${filepath} b/${filepath}\n--- a/${filepath}\n+++ b/${filepath}\n`;
+                    if (headContent !== workContent) {
+                        diffOutput += `@@ -1 +1 @@\n-${headContent}\n+${workContent}\n`;
+                    }
+                } catch { }
+            }
+        }
+        return diffOutput;
+    }
+
+    private async handleRemote(args: string[]) {
+        if (args.length === 0) return Array.from(Object.keys(this.remotes())).join('\n');
+        if (args[0] === '-v') {
+            return Object.entries(this.remotes())
+                .map(([name, url]) => `${name}\t${url} (fetch)\n${name}\t${url} (push)`)
+                .join('\n');
+        }
+        if (args[0] === 'add') {
+            const name = args[1];
+            const url = args[2];
+            this.remotes.update(r => ({ ...r, [name]: url }));
+            return '';
+        }
+        return 'remote: comando no soportado';
+    }
+
+    private async handleFetch(args: string[]) {
+        const remote = args[0] || 'origin';
+        if (!this.remotes()[remote]) return `fatal: '${remote}' does not appear to be a git repository`;
+        return `From ${this.remotes()[remote]}\n * [new branch]      main       -> ${remote}/main`;
+    }
+
+    private async handlePull(args: string[]) {
+        const remote = args[0] || 'origin';
+        const branch = args[1] || 'main';
+        const remoteBranch = `${remote}/${branch}`;
+        this.networkOperation.set('download');
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        this.networkOperation.set(null);
+        let mergeMsg = '';
+        try {
+            mergeMsg = await this.merge(remoteBranch);
+        } catch (e: any) {
+            return `fatal: couldn't find remote ref ${remoteBranch}`;
+        }
+        if (mergeMsg.includes('CONFLICTO')) return mergeMsg;
+        return mergeMsg.replace('Merge realizado', 'Fast-forward');
+    }
+
+    private async handlePush(args: string[]) {
+        const remote = args[0] || 'origin';
+        const branch = args[1] || 'main';
+        this.networkOperation.set('upload');
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        this.networkOperation.set(null);
+        let head = '';
+        try {
+            head = await git.resolveRef({ fs: this.fs, dir: this.dir, ref: 'HEAD' });
+        } catch { return 'error: cannot push (no HEAD)'; }
+        let remoteOid = undefined;
+        const remoteRef = `${remote}/${branch}`;
+        try {
+            remoteOid = await git.resolveRef({ fs: this.fs, dir: this.dir, ref: remoteRef });
+        } catch { }
+        if (remoteOid) {
+            if (remoteOid === head) return 'Everything up-to-date';
+            const isAncestor = await this.isAncestor(remoteOid, head);
+            if (!isAncestor) return `! [rejected] (non-fast-forward)`;
+            await git.branch({ fs: this.fs, dir: this.dir, ref: remoteRef, object: head, force: true });
+            return `To ${this.remotes()[remote]}\n   ${remoteOid.substring(0, 7)}..${head.substring(0, 7)}  ${branch} -> ${branch}`;
+        } else {
+            await git.branch({ fs: this.fs, dir: this.dir, ref: remoteRef, object: head });
+            return `To ${this.remotes()[remote]}\n * [new branch]      ${branch} -> ${branch}`;
+        }
+    }
+
+    private async isAncestor(ancestor: string, descendant: string): Promise<boolean> {
+        if (ancestor === descendant) return true;
+        let current = descendant;
+        const queue = [descendant];
+        const visited = new Set<string>();
+        while (queue.length > 0) {
+            const currentOid = queue.shift();
+            if (!currentOid || visited.has(currentOid)) continue;
+            visited.add(currentOid);
+            if (currentOid === ancestor) return true;
+            try {
+                const commit = await git.readCommit({ fs: this.fs, dir: this.dir, oid: currentOid });
+                if (commit.commit.parent) queue.push(...commit.commit.parent);
+            } catch { }
+        }
+        return false;
+    }
+
+    private async handleClone(args: string[]) {
+        const url = args[0];
+        let dirName = args[1];
+        if (!dirName && url) {
+            const segments = url.split('/');
+            dirName = segments[segments.length - 1].replace('.git', '');
+        }
+        if (!dirName) dirName = 'repo';
+
+        this.networkOperation.set('download');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        this.networkOperation.set(null);
+
+        const current = this.cwd();
+        const newRepoPath = current === '~' ? `~/${dirName}` : `${current}/${dirName}`;
+        this.repoPath.set(newRepoPath);
+
+        return `Cloning into '${dirName}'...\nremote: Enumerating objects: 10, done.\nremote: Total 10 (delta 0), reused 0 (delta 0)\nReceiving objects: 100% (10/10), done.`;
+    }
+
+    private async handleStash(args: string[]) {
+        if (args.length === 0 || args[0] === 'save' || (args[0] === 'push' && args.length > 1)) {
+            const matrix = await git.statusMatrix({ fs: this.fs, dir: this.dir });
+            const changes: Record<string, string> = {};
+            let hasChanges = false;
+            for (const [filepath, head, workdir, stage] of matrix) {
+                if (head !== workdir || head !== stage) {
+                    try {
+                        const content = await this.fs.promises.readFile(`${this.dir}/${filepath}`, 'utf8');
+                        changes[filepath] = content;
+                        hasChanges = true;
+                    } catch { }
+                }
+            }
+            if (hasChanges) {
+                const msg = args.includes('save') ? args[args.indexOf('save') + 1] : 'WIP on ' + (this.currentBranch() || 'detached');
+                this.stashes.update(s => [...s, { id: s.length, message: msg || 'WIP', files: changes }]);
+                await git.checkout({ fs: this.fs, dir: this.dir, ref: 'HEAD', force: true });
+                await this.refreshState();
+                return `Saved working directory and index state On ${this.currentBranch()}: ${msg}`;
+            }
+            return 'No local changes to save';
+        }
+        if (args[0] === 'pop') {
+            const stash = this.stashes().pop();
+            this.stashes.update(s => s.slice(0, -1));
+            if (stash) {
+                for (const [file, content] of Object.entries(stash.files)) {
+                    await this.fs.promises.writeFile(`${this.dir}/${file}`, content);
+                }
+                await this.refreshState();
+                return `Dropped refs/stash@{0} (${stash.message})`;
+            }
+            return 'No stash entries found.';
+        }
+        if (args[0] === 'list') {
+            return this.stashes().map((s, i) => `stash@{${i}}: ${s.message}`).join('\n');
+        }
+        return 'stash: comando desconocido';
+    }
+
+    private async handleClean(args: string[]) {
+        // Simple implementation: remove untracked files
+        if (args.includes('-n')) {
+            const { untracked } = await this.status();
+            return untracked.map(f => `Would remove ${f}`).join('\n');
+        }
+        if (args.includes('-f')) {
+            const { untracked } = await this.status();
+            for (const f of untracked) {
+                await this.fs.promises.unlink(`${this.dir}/${f}`);
+            }
+            await this.refreshState();
+            return `Removing ${untracked.join('\nRemoving ')}`;
+        }
+        return 'fatal: clean requiring -f to run';
+    }
+
+    private async handleRm(args: string[]) {
+        // Simple implementation
+        const file = args[0];
+        try {
+            await git.remove({ fs: this.fs, dir: this.dir, filepath: file });
+            await this.fs.promises.unlink(`${this.dir}/${file}`);
+            await this.refreshState();
+            return `rm '${file}'`;
+        } catch (e: any) {
+            return `fatal: pathspec '${file}' did not match any files`;
+        }
+    }
+
+    private async handleMv(args: string[]) {
+        const src = args[0];
+        const dest = args[1];
+        try {
+            const content = await this.fs.promises.readFile(`${this.dir}/${src}`, 'utf8');
+            await this.fs.promises.writeFile(`${this.dir}/${dest}`, content);
+            await this.fs.promises.unlink(`${this.dir}/${src}`);
+            await git.remove({ fs: this.fs, dir: this.dir, filepath: src });
+            await git.add({ fs: this.fs, dir: this.dir, filepath: dest });
+            await this.refreshState();
+            return `Renaming ${src} to ${dest}`;
+        } catch (e) {
+            return `mv failed: ${e}`;
+        }
+    }
+}
