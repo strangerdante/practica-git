@@ -79,6 +79,66 @@ export const lesson3: Lesson = {
                 'git switch main'
             ],
             tips: [{ text: 'Cherry-pick es útil cuando no quieres fusionar toda una rama, solo un cambio puntual.', type: 'pro' }]
+        },
+        {
+            id: 4,
+            title: 'Unificar Commits (Squash)',
+            description: 'Tienes 3 commits pequeños y quieres unirlos en uno solo antes de hacer push.',
+            steps: [
+                { id: 12, text: 'Observa tus últimos 3 cambios pequeños.', command: 'git log --oneline' },
+                { id: 13, text: 'Mueve el puntero 2 pasos atrás (soft para no perder cambios).', command: 'git reset --soft HEAD~2' },
+                { id: 14, text: 'Verifica que los cambios están listos para unirse.', command: 'git status' },
+                { id: 15, text: 'Crea un solo commit que englobe todo.', command: 'git commit -m "Feature_completa_squashed"' },
+                { id: 16, text: 'Confirma la historia simplificada.', command: 'git log --oneline' }
+            ],
+            setupCommands: [
+                'git init',
+                'git branch -M main',
+                'touch app.js part1.txt part2.txt',
+                'git add app.js', 'git commit -m "Base"',
+                'git add part1.txt', 'git commit -m "WIP_1"',
+                'git add part2.txt', 'git commit -m "WIP_2"'
+            ],
+            tips: [{ text: 'El `--soft` mantiene tus cambios en el área de staging, perfecto para re-commitear juntos.', type: 'info' }]
+        },
+        {
+            id: 5,
+            title: 'Etroceder y Dividir',
+            description: 'Hiciste un commit gigante y quieres separarlo en dos más lógicos.',
+            steps: [
+                { id: 17, text: 'El último commit incluye front y back mezclado.', command: 'git log --oneline' },
+                { id: 18, text: 'Deshaz el commit manteniendo cambios des-stageados.', command: 'git reset --mixed HEAD~1' },
+                { id: 19, text: 'Añade solo el frontend.', command: 'git add index.html' },
+                { id: 20, text: 'Guarda el primer commit.', command: 'git commit -m "Frontend_v1"' },
+                { id: 21, text: 'Añade el resto (backend) y guárdalo.', command: 'git add server.js && git commit -m "Backend_v1"' }
+            ],
+            setupCommands: [
+                'git init',
+                'git branch -M main',
+                'touch index.html server.js',
+                'git add .',
+                'git commit -m "Todo_mezclado_error"'
+            ],
+            tips: [{ text: '`reset --mixed` es el defecto. Mueve HEAD y resetea el staging, pero deja tus archivos intactos.', type: 'info' }]
+        },
+        {
+            id: 6,
+            title: 'Referenciar Tags',
+            description: 'Marca un punto específico en la historia como una "Versión".',
+            steps: [
+                { id: 27, text: 'Crea una etiqueta ligera para la versión 1.0.', command: 'git tag v1.0' },
+                { id: 28, text: 'Lista las etiquetas existentes.', command: 'git tag' },
+                { id: 29, text: 'Haz más cambios.', command: 'touch v2.txt && git add . && git commit -m "Work_v2"' },
+                { id: 30, text: 'Vuelve al pasado usando el tag.', command: 'git checkout v1.0' }
+            ],
+            setupCommands: [
+                'git init',
+                'git branch -M main',
+                'touch release.txt',
+                'git add .',
+                'git commit -m "Release_Ready"'
+            ],
+            tips: [{ text: 'Los tags son punteros fijos, ideales para release versions (v1.0, v2.0).', type: 'info' }]
         }
     ]
 };
