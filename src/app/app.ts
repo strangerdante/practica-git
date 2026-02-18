@@ -59,7 +59,7 @@ export class App {
     const isCompleted = this.isPracticeCompleted(lessonId, practice);
 
     if (isSelected) {
-      return 'bg-[#6366f1] border-[#6366f1] text-white shadow-lg shadow-[#6366f1]/40 scale-105 z-10';
+      return 'bg-[#6366f1] border-[#6366f1] text-white shadow-lg shadow-[#6366f1]/40 scale-105';
     }
     if (isCompleted) {
       return 'bg-[#6366f1]/10 border-[#6366f1] text-[#a5b4fc]';
