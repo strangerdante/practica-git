@@ -65,7 +65,12 @@ export const lesson2: Lesson = {
                 'touch app.js',
                 'git add .',
                 'git commit -m "Base"',
-                'git branch feature' // Rama ya fusionada o existente que queremos borrar
+                'git switch -c feature',
+                'touch feature.txt',
+                'git add .',
+                'git commit -m "Feature_WIP"',
+                'git switch main',
+                'git merge feature'
             ],
             tips: [{ text: 'Si la rama no se ha fusionado, Git te impedirá borrarla con `-d`. Para forzarlo usa `-D`.', type: 'warning' }]
         },
