@@ -206,10 +206,28 @@ export class VisualizerComponent {
                 mode: Mode.Compact
             });
 
-            // Sorting logic remains same...
-            const sortedCommits = Object.values(commits).sort((a, b) =>
-                new Date(a.date).getTime() - new Date(b.date).getTime()
-            );
+            // Topological sort (Depth-based) to ensure parents render before children
+            // This fixes issues where fast commits have identical timestamps
+            const depthCache = new Map<string, number>();
+            const getDepth = (hash: string | null): number => {
+                if (!hash || !commits[hash]) return 0;
+                if (depthCache.has(hash)) return depthCache.get(hash)!;
+
+                const commit = commits[hash];
+                const p1 = getDepth(commit.parent);
+                const p2 = commit.mergeParent ? getDepth(commit.mergeParent) : 0;
+
+                const d = Math.max(p1, p2) + 1;
+                depthCache.set(hash, d);
+                return d;
+            };
+
+            const sortedCommits = Object.values(commits).sort((a, b) => {
+                const depthA = getDepth(a.hash);
+                const depthB = getDepth(b.hash);
+                if (depthA !== depthB) return depthA - depthB;
+                return new Date(a.date).getTime() - new Date(b.date).getTime();
+            });
 
             const commitBranchMap = new Map<string, string>();
             const processed = new Set<string>();

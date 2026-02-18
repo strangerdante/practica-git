@@ -136,6 +136,18 @@ export class LessonService {
 
     checkCommandMatch(input: string, expected: string): boolean {
         if (!input || !expected) return false;
-        return input.trim().replace(/\s+/g, ' ') === expected.trim().replace(/\s+/g, ' ');
+        const normalizedInput = input.trim().replace(/\s+/g, ' ');
+        const normalizedExpected = expected.trim().replace(/\s+/g, ' ');
+
+        // Support for dynamic placeholders like <COMMIT_ID>
+        if (normalizedExpected.includes('<')) {
+            // Escape special regex characters except < and >
+            const escaped = normalizedExpected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            // Replace <words> with \S+ (one or more non-whitespace characters)
+            const pattern = escaped.replace(/<[^>]+>/g, '\\S+');
+            return new RegExp(`^${pattern}$`, 'i').test(normalizedInput);
+        }
+
+        return normalizedInput.toLowerCase() === normalizedExpected.toLowerCase();
     }
 }

@@ -60,7 +60,7 @@ export const lesson3: Lesson = {
             description: 'Trae un commit específico de otra rama a tu rama actual.',
             steps: [
                 { id: 9, text: 'Estás en main. Quieres solo la corrección de "experiment".', command: 'git log experiment --oneline' },
-                { id: 10, text: 'Trae el commit específico usando su ID (simulado).', command: 'git cherry-pick experiment' },
+                { id: 10, text: 'Trae el commit "Fix_importante" usando su ID (el hash corto que ves en el log).', command: 'git cherry-pick <COMMIT_ID>' },
                 { id: 11, text: 'Verifica que el commit se copió a main.', command: 'git log --oneline' }
             ],
             setupCommands: [

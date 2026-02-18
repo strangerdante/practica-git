@@ -119,7 +119,7 @@ export const lesson2: Lesson = {
             description: 'Viaja al pasado para inspeccionar un commit antiguo sin crear una rama.',
             steps: [
                 { id: 20, text: 'Consulta el historial para ver IDs antiguos.', command: 'git log --oneline' },
-                { id: 21, text: 'Salta directamente al primer commit (probablemente HEAD~1).', command: 'git checkout HEAD~1' },
+                { id: 21, text: 'Salta al pasado (3 commits atrás).', command: 'git checkout HEAD~3' },
                 { id: 22, text: 'Observa que ya no estás en una rama (detached).', command: 'git status' },
                 { id: 23, text: 'Vuelve al presente (a la rama main).', command: 'git switch main' }
             ],
@@ -128,10 +128,19 @@ export const lesson2: Lesson = {
                 'git branch -M main',
                 'touch app.js',
                 'git add .',
-                'git commit -m "V1_Vieja"',
-                'echo "Update" >> app.js',
+                'git commit -m "V1_Incial"',
+                'echo "Feature 1" >> app.js',
                 'git add .',
-                'git commit -m "V2_Actual"'
+                'git commit -m "V2_Feature_Alpha"',
+                'echo "Feature 2" >> app.js',
+                'git add .',
+                'git commit -m "V3_Feature_Beta"',
+                'echo "Bugfix" >> app.js',
+                'git add .',
+                'git commit -m "V4_Stable"',
+                'echo "Experimental" >> app.js',
+                'git add .',
+                'git commit -m "V5_Bleeding_Edge"'
             ],
             tips: [{ text: 'Cuidado: los commits que hagas en modo "detached" se perderán si cambias de rama sin crear una nueva.', type: 'warning' }]
         }

@@ -457,19 +457,42 @@ export class GitEngineService {
 
     async restore(args: string[]) {
         const { staged, filepaths } = this.parseRestoreArgs(args);
-        if (filepaths.length === 0) return 'Restore necesita archivos';
+
+        if (filepaths.length === 0) return 'git restore: falta archivo(s) para restaurar';
 
         try {
+            // Check if HEAD exists to decide how to unstage
+            let hasHead = true;
+            try {
+                await git.resolveRef({ fs: this.fs, dir: this.dir, ref: 'HEAD' });
+            } catch {
+                hasHead = false;
+            }
+
             for (const filepath of filepaths) {
                 if (staged) {
-                    await git.resetIndex({ fs: this.fs, dir: this.dir, filepath, ref: 'HEAD' });
+                    const filesToProcess = filepath === '.' ? (await this.status()).staged : [filepath];
+
+                    for (const f of filesToProcess) {
+                        if (hasHead) {
+                            // Normal unstage: HEAD -> Index
+                            await git.resetIndex({ fs: this.fs, dir: this.dir, filepath: f, ref: 'HEAD' });
+                        } else {
+                            // Initial commit unstage: Remove from Index -> Untracked
+                            await git.remove({ fs: this.fs, dir: this.dir, filepath: f });
+                        }
+                    }
                 } else {
-                    // Force checkout to overwrite modifications in working directory
-                    await git.checkout({ fs: this.fs, dir: this.dir, filepaths: [filepath], force: true });
+                    // Restore Working Dir from Index
+                    if (filepath === '.') {
+                        await git.checkout({ fs: this.fs, dir: this.dir, filepaths: ['.'], force: true });
+                    } else {
+                        await git.checkout({ fs: this.fs, dir: this.dir, filepaths: [filepath], force: true });
+                    }
                 }
             }
             await this.refreshState();
-            return 'Archivos restaurados (Working Tree actualizado)';
+            return staged ? 'Archivos sacados del área de staging.' : 'Cambios en el directorio de trabajo descartados.';
         } catch (e: any) {
             return `fatal: ${e.message}`;
         }
@@ -480,8 +503,8 @@ export class GitEngineService {
         const filepaths: string[] = [];
 
         for (const arg of args) {
-            if (arg === '--staged') staged = true;
-            else filepaths.push(arg);
+            if (arg === '--staged' || arg === '--stage') staged = true;
+            else if (!arg.startsWith('-')) filepaths.push(arg);
         }
 
         return { staged, filepaths };
@@ -502,10 +525,19 @@ export class GitEngineService {
                 fs: this.fs,
                 dir: this.dir,
                 message: commit.commit.message,
-                author: commit.commit.author,
+                author: {
+                    name: commit.commit.author.name,
+                    email: commit.commit.author.email,
+                    timestamp: Math.floor(Date.now() / 1000),
+                    timezoneOffset: new Date().getTimezoneOffset()
+                },
                 parent: [await git.resolveRef({ fs: this.fs, dir: this.dir, ref: 'HEAD' })],
                 tree: commit.commit.tree
             });
+
+            // Actualizar directorio de trabajo e índice al nuevo commit
+            await git.checkout({ fs: this.fs, dir: this.dir, ref: sha, force: true });
+
             await this.refreshState();
             return `Cherry-pick ${oid.substring(0, 7)} aplicado como ${sha.substring(0, 7)}.`;
         } catch (e: any) {
@@ -777,7 +809,32 @@ export class GitEngineService {
             message = args.slice(mIdx + 1).join(' ').replace(/^"(.*)"$/, '$1');
         }
 
-        if (args.includes('--amend')) return 'Amend no implementado.';
+        if (args.includes('--amend')) {
+            try {
+                const headOid = await this.resolveRef('HEAD');
+                const headCommit = await git.readCommit({ fs: this.fs, dir: this.dir, oid: headOid });
+
+                // Si no se pasó -m, reusar el mensaje anterior
+                const messageProvided = args.some(a => a.startsWith('-') && a.includes('m'));
+                if (!messageProvided) {
+                    message = headCommit.commit.message;
+                }
+
+                // Hacer commit usando los padres del commit original (reemplazo)
+                const sha = await git.commit({
+                    fs: this.fs,
+                    dir: this.dir,
+                    message: message,
+                    author: this.defaultAuthor,
+                    parent: headCommit.commit.parent
+                });
+
+                await this.refreshState();
+                return `[${this.currentBranch() || 'detached'} ${sha.substring(0, 7)}] ${message} (amend)`;
+            } catch (e: any) {
+                return `fatal: no se pudo hacer amend: ${e.message}`;
+            }
+        }
 
         if (autoAdd) {
             // Stage modified files (mimicking git commit -a)
@@ -822,7 +879,11 @@ export class GitEngineService {
 
                 commits = Array.from(commitMap.values());
             } else {
-                commits = await git.log({ fs: this.fs, dir: this.dir });
+                // Detect specific ref (e.g. 'git log experiment')
+                const nonFlags = args.filter(a => !a.startsWith('-'));
+                const ref = nonFlags.length > 0 ? nonFlags[0] : undefined; // git.log defaults to HEAD if undefined
+
+                commits = await git.log({ fs: this.fs, dir: this.dir, ref });
             }
 
             // Sort by timestamp descending
