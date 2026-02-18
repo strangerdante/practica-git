@@ -838,7 +838,7 @@ export class GitEngineService {
         }
 
         // Logic to extract message from -m flag
-        const mIdx = args.findIndex(a => a.startsWith('-') && a.includes('m'));
+        const mIdx = args.findIndex(a => a.startsWith('-') && a.includes('m') && a !== '--amend');
         if (mIdx !== -1 && args.length > mIdx + 1) {
             message = args.slice(mIdx + 1).join(' ').replace(/^"(.*)"$/, '$1');
         }
@@ -849,7 +849,7 @@ export class GitEngineService {
                 const headCommit = await git.readCommit({ fs: this.fs, dir: this.dir, oid: headOid });
 
                 // Si no se pasó -m, reusar el mensaje anterior
-                const messageProvided = args.some(a => a.startsWith('-') && a.includes('m'));
+                const messageProvided = args.some(a => a.startsWith('-') && a.includes('m') && a !== '--amend');
                 if (!messageProvided) {
                     message = headCommit.commit.message;
                 }
@@ -922,6 +922,22 @@ export class GitEngineService {
 
             // Sort by timestamp descending
             commits.sort((a, b) => b.commit.author.timestamp - a.commit.author.timestamp);
+
+            // Parse -N or -n N limit
+            let limit = 0;
+            const limitArgIndex = args.findIndex(a => /^-(\d+)$/.test(a));
+            if (limitArgIndex !== -1) {
+                limit = parseInt(args[limitArgIndex].substring(1), 10);
+            } else {
+                const nArgIndex = args.indexOf('-n');
+                if (nArgIndex !== -1 && args[nArgIndex + 1]) {
+                    limit = parseInt(args[nArgIndex + 1], 10);
+                }
+            }
+
+            if (limit > 0) {
+                commits = commits.slice(0, limit);
+            }
 
             return commits.map(l => {
                 const shortHash = l.oid.substring(0, 7);

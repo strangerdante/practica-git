@@ -21,6 +21,15 @@ export const lesson3: Lesson = {
             setupCommands: [
                 'git init',
                 'git branch -M main',
+                'touch base.txt',
+                'git add .',
+                'git commit -m "Initial_commit"',
+                'touch feature.txt',
+                'git add .',
+                'git commit -m "Feature_Start"',
+                'touch config.json',
+                'git add .',
+                'git commit -m "Config_Setup"',
                 'touch error.txt',
                 'git add .',
                 'git commit -m "Error_en_mensaje"'

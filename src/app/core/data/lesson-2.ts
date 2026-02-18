@@ -131,21 +131,22 @@ export const lesson2: Lesson = {
             setupCommands: [
                 'git init',
                 'git branch -M main',
-                'touch app.js',
+                'touch versiones.txt',
+                'echo "Archivo de Versiones\n------------------\nVersión 1: Funcionalidad base del sistema." > versiones.txt',
                 'git add .',
                 'git commit -m "V1_Incial"',
-                'echo "Feature 1" >> app.js',
+                'echo "Archivo de Versiones\n------------------\nVersión 2: Agregados estilos CSS y layout." > versiones.txt',
                 'git add .',
-                'git commit -m "V2_Feature_Alpha"',
-                'echo "Feature 2" >> app.js',
+                'git commit -m "V2_Estilos"',
+                'echo "Archivo de Versiones\n------------------\nVersión 3: Implementada lógica de autenticación." > versiones.txt',
                 'git add .',
-                'git commit -m "V3_Feature_Beta"',
-                'echo "Bugfix" >> app.js',
+                'git commit -m "V3_Auth"',
+                'echo "Archivo de Versiones\n------------------\nVersión 4: Corrección de bugs críticos en login." > versiones.txt',
                 'git add .',
-                'git commit -m "V4_Stable"',
-                'echo "Experimental" >> app.js',
+                'git commit -m "V4_Fixes"',
+                'echo "Archivo de Versiones\n------------------\nVersión 5: Optimización de rendimiento y cache." > versiones.txt',
                 'git add .',
-                'git commit -m "V5_Bleeding_Edge"'
+                'git commit -m "V5_Optimizacion"'
             ],
             tips: [{ text: 'Cuidado: los commits que hagas en modo "detached" se perderán si cambias de rama sin crear una nueva.', type: 'warning' }]
         }
