@@ -103,19 +103,22 @@ export const lesson3: Lesson = {
         },
         {
             id: 5,
-            title: 'Etroceder y Dividir',
-            description: 'Hiciste un commit gigante y quieres separarlo en dos más lógicos.',
+            title: 'Retroceder y Dividir',
+            description: 'Hiciste un commit gigante y quieres separarlo en dos más lógicos (Frontend y Backend).',
             steps: [
-                { id: 17, text: 'El último commit incluye front y back mezclado.', command: 'git log --oneline' },
-                { id: 18, text: 'Deshaz el commit manteniendo cambios des-stageados.', command: 'git reset --mixed HEAD~1' },
-                { id: 19, text: 'Añade solo el frontend.', command: 'git add index.html' },
-                { id: 20, text: 'Guarda el primer commit.', command: 'git commit -m "Frontend_v1"' },
-                { id: 21, text: 'Añade el resto (backend) y guárdalo.', command: 'git add server.js && git commit -m "Backend_v1"' }
+                { id: 17, text: 'El último commit mezcla archivos de UI y servidor.', command: 'git log --oneline' },
+                { id: 18, text: 'Deshaz el commit manteniendo los archivos en el directorio de trabajo.', command: 'git reset --mixed HEAD~1' },
+                { id: 19, text: 'Añade solo los archivos de Frontend.', command: 'git add index.html styles.css' },
+                { id: 20, text: 'Crea un commit exclusivo para el Frontend.', command: 'git commit -m "Frontend_v1"' },
+                { id: 21, text: 'Añade el resto (Backend) y crea su propio commit.', command: 'git add . && git commit -m "Backend_v1"' }
             ],
             setupCommands: [
                 'git init',
                 'git branch -M main',
-                'touch index.html server.js',
+                'touch README.md',
+                'git add .',
+                'git commit -m "Initial_commit"',
+                'touch index.html styles.css server.js config.json',
                 'git add .',
                 'git commit -m "Todo_mezclado_error"'
             ],

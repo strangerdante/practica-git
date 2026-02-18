@@ -98,9 +98,7 @@
                     <div *ngIf="lesson.practices && lesson.practices.length > 0" class="flex flex-wrap gap-2 mb-6">
                         <button *ngFor="let p of lesson.practices" (click)="selectPractice(p.id)"
                             class="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex flex-col items-start gap-1"
-                            [ngClass]="currentPractice()?.id === p.id 
-                                ? 'bg-[#6366f1]/20 border-[#6366f1] text-[#a5b4fc]' 
-                                : 'bg-[#1e293b] border-[#334155] text-[#94a3b8] hover:border-[#6366f1]/50 hover:text-[#f1f5f9]'">
+                            [ngClass]="getPracticeButtonClass(lesson.id, p)">
                             <span>Práctica {{ p.id }}</span>
                             <!-- <span class="text-[10px] opacity-70 font-normal">{{ p.title }}</span> -->
                         </button>

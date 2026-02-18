@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common'; // Need CommonModule for *ngIf/*
 import { TerminalComponent } from './shared/components/terminal/terminal.component';
 import { VisualizerComponent } from './shared/components/visualizer/visualizer.component';
 import { LessonService } from './core/services/lesson.service';
+import { Practice } from './core/models/lesson.interface';
 
 @Component({
   selector: 'app-root',
@@ -45,6 +46,25 @@ export class App {
 
   get completedSteps() {
     return this.lessonService.completedSteps;
+  }
+
+  isPracticeCompleted(lessonId: number, practice: Practice): boolean {
+    const completed = this.completedSteps()[lessonId] || [];
+    if (!practice.steps || practice.steps.length === 0) return false;
+    return practice.steps.every(s => completed.includes(s.id));
+  }
+
+  getPracticeButtonClass(lessonId: number, practice: Practice): string {
+    const isSelected = this.currentPractice()?.id === practice.id;
+    const isCompleted = this.isPracticeCompleted(lessonId, practice);
+
+    if (isSelected) {
+      return 'bg-[#6366f1] border-[#6366f1] text-white shadow-lg shadow-[#6366f1]/40 scale-105 z-10';
+    }
+    if (isCompleted) {
+      return 'bg-[#6366f1]/10 border-[#6366f1] text-[#a5b4fc]';
+    }
+    return 'bg-[#1e293b] border-[#334155] text-[#94a3b8] hover:border-[#6366f1]/50 hover:text-[#f1f5f9]';
   }
 
   @ViewChild('lessonSelectorContainer') lessonSelectorContainer!: ElementRef;

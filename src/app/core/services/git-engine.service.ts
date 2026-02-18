@@ -222,10 +222,33 @@ export class GitEngineService {
         return { staged, modified, untracked };
     }
 
-    async add(path: string) {
-        await git.add({ fs: this.fs, dir: this.dir, filepath: path });
+    async add(paths: string[]) {
+        if (!paths || paths.length === 0) return 'add: falta archivo';
+        const filesToAdd: string[] = [];
+
+        // Handle 'git add .' special case
+        if (paths.includes('.')) {
+            const status = await this.status();
+            // Add untracked and modified files
+            filesToAdd.push(...status.untracked, ...status.modified);
+            // Deduplicate just in case
+        } else {
+            filesToAdd.push(...paths);
+        }
+
+        // Use a set to remove duplicates if mixed arguments provided
+        const uniqueFiles = [...new Set(filesToAdd)];
+
+        for (const path of uniqueFiles) {
+            if (path === '.') continue; // Handled above, but just in case
+            try {
+                await git.add({ fs: this.fs, dir: this.dir, filepath: path });
+            } catch (e) {
+                return `fatal: pathspec '${path}' did not match any files`;
+            }
+        }
         await this.refreshState();
-        return `Se añadió ${path}`;
+        return `Se añadieron: ${uniqueFiles.join(', ')}`;
     }
 
     async commit(message: string) {
@@ -396,17 +419,26 @@ export class GitEngineService {
         }
 
         if (mode === 'mixed' || mode === 'hard') {
-            // Mixed y Hard actualizan index/working dir de alguna forma
-            // Simplificación: readBlob del target y escribir al FS
-            // Hard: Sobrescribe todo. Mixed: Deja working dir igual? No, mixed actualiza index pero no working.
-
-            // Para esta simulación, Hard es lo crítico.
             if (mode === 'hard') {
+                // Hard: Reset Index AND Working Directory to match Target
                 await git.checkout({ fs: this.fs, dir: this.dir, ref: oid, force: true });
+            } else {
+                // Mixed (Default): Reset Index to match Target, keep Working Directory
+                // The HEAD ref was already moved above. Now we must sync Index -> HEAD
+                // We iterate all files potentially involved (in Index or HEAD)
+                try {
+                    const matrix = await git.statusMatrix({ fs: this.fs, dir: this.dir });
+                    for (const [filepath] of matrix) {
+                        try {
+                            await git.resetIndex({ fs: this.fs, dir: this.dir, filepath });
+                        } catch (e) {
+                            // Ignore errors for individual files (e.g. if deleted/renamed in weird ways)
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error during mixed reset index update:', e);
+                }
             }
-            // Mixed solo mueve HEAD e Index. Implementation de isomorphic-git resetIndex es archivo por archivo.
-            // Para simular mixed global, necesitaríamos resetear todo el index al OID.
-            // Por simplicidad, asumimos que 'hard' es lo más usado en las lecciones.
         }
 
         await this.refreshState();
@@ -447,7 +479,7 @@ export class GitEngineService {
                 }
             }
 
-            await this.add('.');
+            await this.add(['.']);
             await this.commit(`Revert "${commit.commit.message}"`);
             return 'Revert completado.';
         } catch (e: any) {
@@ -568,7 +600,7 @@ export class GitEngineService {
             if (cmd === 'cd') return this.handleCd(parts[1]);
             if (cmd === 'configure-env') return this.handleConfigureEnv(parts.slice(1));
 
-            if (cmd === 'touch') return await this.handleTouch(parts[1]);
+            if (cmd === 'touch') return await this.handleTouch(parts.slice(1));
             if (cmd === 'mkdir') return await this.handleMkdir(parts[1]);
             if (cmd === 'echo') return await this.handleEcho(parts);
             if (cmd === 'cat') return await this.handleCat(parts[1]);
@@ -634,9 +666,11 @@ export class GitEngineService {
         return `Editor '${editor}' simulado.\nPara editar archivos usa:\n  echo "contenido" > ${target} (sobrescribir)\n  echo "más contenido" >> ${target} (agregar al final)\n  cat ${target} (ver contenido)`;
     }
 
-    private async handleTouch(filename: string) {
-        if (!filename) return 'touch: falta archivo';
-        await this.fs.promises.writeFile(`${this.dir}/${filename}`, '');
+    private async handleTouch(filenames: string[]) {
+        if (!filenames || filenames.length === 0) return 'touch: falta archivo';
+        for (const filename of filenames) {
+            await this.fs.promises.writeFile(`${this.dir}/${filename}`, '');
+        }
         await this.refreshState();
         return '';
     }
@@ -741,7 +775,7 @@ export class GitEngineService {
         const commands: Record<string, () => Promise<string>> = {
             'init': async () => { await this.init(); return 'Repositorio reinicializado.'; },
             'status': () => this.handleStatus(),
-            'add': () => this.add(args[0]),
+            'add': () => this.add(args),
             'commit': () => this.handleCommit(args),
             'log': () => this.handleLog(args),
             'branch': () => this.handleBranch(args),
