@@ -104,6 +104,34 @@ export class LessonService {
         });
     }
 
+    async resetLesson(lessonId: number) {
+        // Clear progress for this lesson
+        this.completedSteps.update(current => {
+            const updated = { ...current };
+            delete updated[lessonId];
+            return updated;
+        });
+        this.saveProgress();
+
+        // If it's the current lesson, re-initialize
+        if (this.currentLessonId() === lessonId) {
+            const lesson = this.lessons().find(l => l.id === lessonId);
+            if (lesson) {
+                if (lesson.practices && lesson.practices.length > 0) {
+                    // Check if there is a current practice
+                    const currentPracticeId = this.currentPracticeId();
+                    if (currentPracticeId) {
+                        await this.setPractice(currentPracticeId);
+                    } else {
+                        await this.setPractice(lesson.practices[0].id);
+                    }
+                } else {
+                    await this.initializeEnvironment(lesson.setupCommands);
+                }
+            }
+        }
+    }
+
     private saveProgress(steps?: Record<number, number[]>) {
         const state = {
             currentLessonId: this.currentLessonId(),

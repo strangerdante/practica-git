@@ -84,6 +84,16 @@
                             <h2 class="text-lg font-semibold text-[#f1f5f9] flex items-center gap-2">
                                 <span class="w-2 h-2 rounded-full bg-[#6366f1] animate-pulse"></span>
                                 Lección {{ lesson.id }}: {{ lesson.title }}
+                                <button (click)="resetLesson(lesson.id)"
+                                    class="ml-3 p-1.5 rounded-md hover:bg-[#ef4444]/20 text-[#ef4444]/70 hover:text-[#ef4444] transition-all"
+                                    title="Reiniciar Lección">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                        stroke-linejoin="round">
+                                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                                        <path d="M3 3v5h5" />
+                                    </svg>
+                                </button>
                             </h2>
                             <p class="text-[#94a3b8] text-sm mt-1">{{ lesson.description }}</p>
                         </div>

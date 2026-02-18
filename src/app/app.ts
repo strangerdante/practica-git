@@ -40,6 +40,12 @@ export class App {
     this.lessonService.setPractice(id);
   }
 
+  async resetLesson(lessonId: number) {
+    if (confirm('¿Estás seguro de que quieres reiniciar esta lección? Se perderá todo el progreso actual.')) {
+      await this.lessonService.resetLesson(lessonId);
+    }
+  }
+
   toggleStep(lessonId: number, stepId: number) {
     this.lessonService.toggleStepCompletion(lessonId, stepId);
   }
