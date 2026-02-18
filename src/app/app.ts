@@ -47,6 +47,15 @@ export class App {
     return this.lessonService.completedSteps;
   }
 
+  @ViewChild('lessonSelectorContainer') lessonSelectorContainer!: ElementRef;
+
+  @HostListener('document:click', ['$event'])
+  onClickOutside(event: MouseEvent) {
+    if (this.showLessonSelector() && this.lessonSelectorContainer && !this.lessonSelectorContainer.nativeElement.contains(event.target as Node)) {
+      this.showLessonSelector.set(false);
+    }
+  }
+
   // Dragging Logic
   startDrag(event: MouseEvent) {
     event.preventDefault();
