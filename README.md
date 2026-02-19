@@ -1,6 +1,8 @@
 # Simulador Git 🛠️
 
 **Simulador Git** es una plataforma educativa interactiva diseñada para dominar Git mediante la práctica directa. A diferencia de un tutorial estático, esta aplicación proporciona un entorno simulado completo donde puedes ejecutar comandos reales y ver cómo afectan al historial de tu proyecto de forma visual y dinámica.
+- **Demon online**: [Simulador Git](https://gitlet.netlify.app/)
+
 
 ## ✨ Características Principales
 
