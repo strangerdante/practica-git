@@ -62,6 +62,29 @@ import { LessonService } from '../../../core/services/lesson.service';
         display: block;
         height: 100%;
         width: 100%;
+        border: none !important;
+        outline: none !important;
+        box-shadow: none !important;
+    }
+
+    /* Eliminar bordes y outlines internos de xterm */
+    .xterm,
+    .xterm-viewport,
+    .xterm-screen,
+    .xterm-container,
+    .terminal.xterm,
+    .ng-terminal,
+    .xterm-helper-textarea {
+        border: none !important;
+        outline: none !important;
+        box-shadow: none !important;
+    }
+
+    /* El textarea oculto de xterm no debe generar espacio visual */
+    .xterm-helper-textarea {
+        opacity: 0 !important;
+        position: fixed !important;
+        left: -9999em !important;
     }
 
     /* Ensure canvas background matches */
@@ -321,6 +344,8 @@ export class TerminalComponent implements AfterViewInit, OnDestroy {
             this.child.write(this.colorize(output));
             this.child.write('\r\n');
           }
+          // Auto-check practice steps that match the executed command
+          this.lessonService.autoCheckCommandMatch(cmd);
         } catch (e) {
           this.child.write(`\x1b[31mError: ${e}\x1b[0m\r\n`);
         }

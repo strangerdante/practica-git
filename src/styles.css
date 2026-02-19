@@ -1,3 +1,26 @@
 /* You can add global styles to this file, and also import other style files */
 
 @import "tailwindcss";
+
+/* ──────────────────────────────────────────────────────
+   Fix xterm.js: El .xterm-viewport tiene background #000 por defecto
+   lo que genera un borde negro visible dentro del terminal.
+   Se sobreescribe con el color del tema de la aplicación.
+   ────────────────────────────────────────────────────── */
+.xterm .xterm-viewport {
+  background-color: #0f172a !important;
+}
+
+.xterm-viewport {
+  background-color: #0f172a !important;
+}
+
+/* Eliminar cualquier outline o borde interno de ng-terminal */
+ng-terminal,
+.ng-terminal,
+.xterm,
+.terminal.xterm {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
