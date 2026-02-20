@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common'; // Need CommonModule for *ngIf/*
 import { TerminalComponent } from './shared/components/terminal/terminal.component';
 import { VisualizerComponent } from './shared/components/visualizer/visualizer.component';
 import { LessonService } from './core/services/lesson.service';
-import { Practice } from './core/models/lesson.interface';
+import { Lesson, Practice } from './core/models/lesson.interface';
 
 @Component({
   selector: 'app-root',
@@ -58,6 +58,16 @@ export class App {
     const completed = this.completedSteps()[lessonId] || [];
     if (!practice.steps || practice.steps.length === 0) return false;
     return practice.steps.every(s => completed.includes(s.id));
+  }
+
+  isLessonCompleted(lesson: Lesson): boolean {
+    if (lesson.practices && lesson.practices.length > 0) {
+      return lesson.practices.every(p => this.isPracticeCompleted(lesson.id, p));
+    } else {
+      const completed = this.completedSteps()[lesson.id] || [];
+      if (!lesson.steps || lesson.steps.length === 0) return false;
+      return lesson.steps.every(s => completed.includes(s.id));
+    }
   }
 
   getPracticeButtonClass(lessonId: number, practice: Practice): string {

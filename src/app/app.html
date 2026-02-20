@@ -34,13 +34,16 @@
                         Disponibles</div>
                     <button *ngFor="let lesson of lessons()" (click)="selectLesson(lesson.id)"
                         class="w-full text-left px-3 py-2 rounded text-sm hover:bg-[#1e293b] transition-colors flex items-center gap-2 group"
-                        [class.text-[#22d3ee]]="currentLesson()?.id === lesson.id"
+                        [class.text-[#22d3ee]]="currentLesson()?.id === lesson.id && !isLessonCompleted(lesson)"
+                        [class.text-[#4ade80]]="isLessonCompleted(lesson)"
                         [class.bg-[#1e293b]]="currentLesson()?.id === lesson.id"
-                        [class.text-[#f1f5f9]]="currentLesson()?.id !== lesson.id">
-                        <span class="w-2 h-2 rounded-full" [class.bg-[#6366f1]]="currentLesson()?.id === lesson.id"
-                            [class.bg-[#94a3b8]]="currentLesson()?.id !== lesson.id"
-                            [class.group-hover:bg-[#6366f1]]="currentLesson()?.id !== lesson.id"></span>
-                        Lesson {{ lesson.id }}: {{ lesson.title }}
+                        [class.text-[#f1f5f9]]="currentLesson()?.id !== lesson.id && !isLessonCompleted(lesson)">
+                        <span class="w-2 h-2 rounded-full" [class.bg-[#6366f1]]="currentLesson()?.id === lesson.id && !isLessonCompleted(lesson)"
+                            [class.bg-[#4ade80]]="isLessonCompleted(lesson)"
+                            [class.bg-[#94a3b8]]="currentLesson()?.id !== lesson.id && !isLessonCompleted(lesson)"
+                            [class.group-hover:bg-[#6366f1]]="currentLesson()?.id !== lesson.id && !isLessonCompleted(lesson)"
+                            [class.group-hover:bg-[#4ade80]]="isLessonCompleted(lesson)"></span>
+                        {{ lesson.id }}: {{ lesson.title }}
                     </button>
                 </div>
             </div>
@@ -82,8 +85,11 @@
                     <div class="flex justify-between items-start mb-4">
                         <div>
                             <h2 class="text-lg font-semibold text-[#f1f5f9] flex items-center gap-2">
-                                <span class="w-2 h-2 rounded-full bg-[#6366f1] animate-pulse"></span>
-                                Lección {{ lesson.id }}: {{ lesson.title }}
+                                <span class="w-2 h-2 rounded-full" 
+                                      [class.bg-[#6366f1]]="!isLessonCompleted(lesson)"
+                                      [class.bg-[#4ade80]]="isLessonCompleted(lesson)"
+                                      [class.animate-pulse]="!isLessonCompleted(lesson)"></span>
+                                {{ lesson.id }}: {{ lesson.title }}
                                 <button (click)="resetLesson(lesson.id)"
                                     class="ml-3 p-1.5 rounded-md hover:bg-[#ef4444]/20 text-[#ef4444]/70 hover:text-[#ef4444] transition-all"
                                     title="Reiniciar Lección">
