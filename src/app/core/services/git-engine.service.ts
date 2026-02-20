@@ -200,7 +200,12 @@ export class GitEngineService {
         try {
             return await git.resolveRef({ ...this.gitOpts, ref });
         } catch {
-            return await git.expandOid({ ...this.gitOpts, oid: ref });
+            try {
+                // Intenta buscar si es un tag
+                return await git.resolveRef({ ...this.gitOpts, ref: `refs/tags/${ref}` });
+            } catch {
+                return await git.expandOid({ ...this.gitOpts, oid: ref });
+            }
         }
     }
 
@@ -1169,6 +1174,15 @@ export class GitEngineService {
                 const msg = args.includes('save') ? args[args.indexOf('save') + 1] : 'WIP on ' + (this.currentBranch() || 'detached');
                 this.stashes.update(s => [...s, { id: s.length, message: msg || 'WIP', files: changes }]);
                 await git.checkout({ ...this.gitOpts, ref: 'HEAD', force: true });
+
+                // Remove untracked files so the stash actually cleans the working directory
+                const { untracked } = await this.status();
+                for (const f of untracked) {
+                    try {
+                        await this.fs.promises.unlink(`${this.dir}/${f}`);
+                    } catch (e) { }
+                }
+
                 await this.refreshState();
                 return `Saved working directory and index state On ${this.currentBranch()}: ${msg}`;
             }
