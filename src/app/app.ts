@@ -46,6 +46,13 @@ export class App {
     }
   }
 
+  async resetPractice(lessonId: number, practiceId: number | undefined) {
+    if (practiceId === undefined) return;
+    if (confirm('¿Estás seguro de que quieres reiniciar esta práctica? Se perderá todo el progreso actual de esta práctica.')) {
+      await this.lessonService.resetPractice(lessonId, practiceId);
+    }
+  }
+
   toggleStep(lessonId: number, stepId: number) {
     this.lessonService.toggleStepCompletion(lessonId, stepId);
   }

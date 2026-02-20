@@ -132,6 +132,30 @@ export class LessonService {
         }
     }
 
+    async resetPractice(lessonId: number, practiceId: number) {
+        const lesson = this.lessons().find(l => l.id === lessonId);
+        const practice = lesson?.practices?.find(p => p.id === practiceId);
+
+        if (!lesson || !practice || !practice.steps) return;
+
+        const practiceStepIds = practice.steps.map(s => s.id);
+
+        this.completedSteps.update(current => {
+            const updated = { ...current };
+            const lessonSteps = updated[lessonId] || [];
+            updated[lessonId] = lessonSteps.filter(id => !practiceStepIds.includes(id));
+            if (updated[lessonId].length === 0) {
+                delete updated[lessonId];
+            }
+            return updated;
+        });
+        this.saveProgress();
+
+        if (this.currentLessonId() === lessonId && this.currentPracticeId() === practiceId) {
+            await this.initializeEnvironment(practice.setupCommands);
+        }
+    }
+
     private saveProgress(steps?: Record<number, number[]>) {
         const state = {
             currentLessonId: this.currentLessonId(),

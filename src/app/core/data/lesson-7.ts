@@ -154,7 +154,8 @@ export const lesson7: Lesson = {
                 'git merge feature/login',
                 'git push origin main', // Update remote main
                 'git reset --hard HEAD~1', // Rollback local main to simulate being behind
-                'git branch --set-upstream-to=origin/main main'
+                'git branch --set-upstream-to=origin/main main',
+                'git switch feature/login' // Volver a la rama de feature para empezar la práctica
             ],
             tips: [{ text: 'Borrar ramas fusionadas mantiene tu entorno local ordenado y fácil de entender.', type: 'pro' }]
         }
