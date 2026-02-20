@@ -1,6 +1,8 @@
-# PracticaGit 🛠️
+# Simulador Git 🛠️
 
-**PracticaGit** es una plataforma educativa interactiva diseñada para dominar Git mediante la práctica directa. A diferencia de un tutorial estático, esta aplicación proporciona un entorno simulado completo donde puedes ejecutar comandos reales y ver cómo afectan al historial de tu proyecto de forma visual y dinámica.
+**Simulador Git** es una plataforma educativa interactiva diseñada para dominar Git mediante la práctica directa. A diferencia de un tutorial estático, esta aplicación proporciona un entorno simulado completo donde puedes ejecutar comandos reales y ver cómo afectan al historial de tu proyecto de forma visual y dinámica.
+- **Demo online**: [Simulador Git](https://gitlet.netlify.app/)
+
 
 ## ✨ Características Principales
 
@@ -26,7 +28,7 @@ Si deseas ejecutar este proyecto localmente:
 
 1. Clona el repositorio:
    ```bash
-   git clone https://github.com/tu-usuario/practicagit.git
+   git clone https://github.com/strangerdante/practica-git
    ```
 2. Instala las dependencias:
    ```bash
